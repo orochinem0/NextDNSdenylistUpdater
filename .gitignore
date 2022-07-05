@@ -1,0 +1,3 @@
+# .gitignore 
+config.ps1
+blacklist_domains_short.txt
