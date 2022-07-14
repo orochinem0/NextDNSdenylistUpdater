@@ -1,4 +1,4 @@
-. .\config.ps1
+. .\config.ps1 # import your own authentication details (see README)
 
 # API config
 $url        = 'https://api.nextdns.io/profiles/'+$DNSprofile+'/denylist'
@@ -6,38 +6,52 @@ $headers    = New-Object "System.Collections.Generic.Dictionary[[String],[String
 $headers.Add("X-API-KEY", $APIkey)
 
 # application variables
-$inputfile  = ".\blacklist_domains.txt" # text list of hosts
+$logpath    = ".\errors.log"
+$inputpath  = ".\blacklist_domains_test.txt" # text list of hosts
+$inputfile  = Get-Content $inputpath # dump hosts from file
+$count      = 0 # iterators for progress bar
+$skipped    = 0
+$total      = $inputfile.Length # read total length of host list for accurate progress bar
 $sleeptime  = 1 # in seconds - NextDNS will rate limit less than 1 second between API calls
-$count      = 0 # iterator for progress bar
-$tcount     = (Get-Content $inputfile).Length # read total length of host list for accurate progress bar
 
-clear-host # make the terminal neat and pretty before we get on with the show
+Clear-Host # make the terminal neat and pretty before we get on with the show
 
-Get-Content $inputfile | ForEach-Object { # main loop
+$inputfile | ForEach-Object { # main loop
     $domain = @{ # build JSON out of host entry
         "id"     = $_
         "active" = $true
     }
     $json = $domain | ConvertTo-Json
 
-    try { # POST the JSON of the host to NextDNS and handle errors
+    try { # POST the JSON to NextDNS and handle errors
         $response = Invoke-RestMethod $url -Headers $headers -Method Post -Body $json -ContentType 'application/json'
     }
-    catch { # capture error information
-        if ($_.Exception.Response -eq $null) { # if no response, return exception message
-            Write-Host "At $($_.InvocationInfo.ScriptLineNumbere): $_.Exception.Message" -ForeGroundColor Red
+    catch { # capture Powershell errors and the URL that failed
+        Write-Error $error[0].Exception.Message
+        Write-Host $domain.id
+        $errormessage = 'connection exception,'+$domain.id
+        Add-Content -Path $logpath -Value $errormessage
+        $skipped++
+    }
+    if ($response.errors.code) { # capture NextDNS.io errors
+        $errormessage = $response.errors.code+','+$domain.id
+        if ($response.errors.code -eq "duplicate") {
+            # do nothing, we can simply count them towards the skipped total
         }
-        else { # output detailed error messages
-            $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-            $respBody = $reader.ReadToEnd() | ConvertFrom-Json
-            Write-Host "At line $($_.InvocationInfo.ScriptLineNumber): $_.Exception.Message $($respBody.code): $respBody.message $respBody.causeDetails" -ForegroundColor Red
+        else { # if something other than a duplicate, write to error log
+            Write-Host $errormessage
+            Add-Content -Path $logpath -Value $errormessage
         }
+        $skipped++
     }
 
-    Start-Sleep -Seconds $sleeptime # pause so we don't hit the rate limiter
+    $count++ # update quantities for the progress bar
+    $processed = $count - $skipped
+    $percent = [math]::Round(($count / $total)*100,2)
 
-    $count++ # update progress bar
-    $complete = [math]::Round($count / $tcount) * 100
-    $precise  = [math]::Round($count / $tcount,4) * 100
-    Write-Progress -Activity "Adding to NextDNS Denylist:" -Status "Processed $count of $tcount hosts $precise%" -PercentComplete $complete
+    Write-Progress -Activity "Processed $processed of $total hosts ($skipped skipped)" -Status "$percent%" -PercentComplete $percent
+    Start-Sleep -Seconds $sleeptime # pause so we don't hit the rate limiter
 }
+
+Write-Progress -Activity "Processed $processed of $total hosts ($skipped skipped)" -Complete
+Write-Host "Processed $processed of $total hosts ($skipped skipped) and added to the NextDNS.io Denylist on profile $DNSprofile"
