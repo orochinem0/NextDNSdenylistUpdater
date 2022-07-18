@@ -6,17 +6,17 @@ $headers    = New-Object "System.Collections.Generic.Dictionary[[String],[String
 $headers.Add("X-API-KEY", $APIkey)
 
 # application variables
-$logpath    = ".\errors.log"
-$inputpath  = ".\blacklist_domains_test.txt" # text list of hosts
-$inputfile  = Get-Content $inputpath # dump hosts from file
+$logPath    = ".\errors.log"
+$inputPath  = ".\blacklist_domains_test.txt" # text list of hosts
+$inputFile  = Get-Content $inputpath # dump hosts from file
 $count      = 0 # iterators for progress bar
 $skipped    = 0
 $total      = $inputfile.Length # read total length of host list for accurate progress bar
-$sleeptime  = 1 # in seconds - NextDNS will rate limit less than 1 second between API calls
+$sleepTime  = 1 # in seconds - NextDNS will rate limit less than 1 second between API calls
 
 Clear-Host # make the terminal neat and pretty before we get on with the show
 
-$inputfile | ForEach-Object { # main loop
+$inputFile | ForEach-Object { # main loop
     $domain = @{ # build JSON out of host entry
         "id"     = $_
         "active" = $true
@@ -29,18 +29,18 @@ $inputfile | ForEach-Object { # main loop
     catch { # capture Powershell errors and the URL that failed
         Write-Error $error[0].Exception.Message
         Write-Host $domain.id
-        $errormessage = 'connection exception,'+$domain.id
-        Add-Content -Path $logpath -Value $errormessage
+        $errorMessage = 'connection exception,'+$domain.id
+        Add-Content -Path $logPath -Value $errorMessage
         $skipped++
     }
     if ($response.errors.code) { # capture NextDNS.io errors
-        $errormessage = $response.errors.code+','+$domain.id
+        $errorMessage = $response.errors.code+','+$domain.id
         if ($response.errors.code -eq "duplicate") {
             # do nothing, we can simply count them towards the skipped total
         }
         else { # if something other than a duplicate, write to error log
-            Write-Host $errormessage
-            Add-Content -Path $logpath -Value $errormessage
+            Write-Host $errorMessage
+            Add-Content -Path $logPath -Value $errorMessage
         }
         $skipped++
     }
@@ -50,7 +50,7 @@ $inputfile | ForEach-Object { # main loop
     $percent = [math]::Round(($count / $total)*100,2)
 
     Write-Progress -Activity "Processed $processed of $total hosts ($skipped skipped)" -Status "$percent%" -PercentComplete $percent
-    Start-Sleep -Seconds $sleeptime # pause so we don't hit the rate limiter
+    Start-Sleep -Seconds $sleepTime # pause so we don't hit the rate limiter
 }
 
 Write-Progress -Activity "Processed $processed of $total hosts ($skipped skipped)" -Complete
